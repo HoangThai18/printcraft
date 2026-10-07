@@ -1,0 +1,80 @@
+# Windows-only subset of release.yml for self-hosted downloads: builds the x64 MSI and portable
+# zip from the checked-out commit and attaches them to a draft GitHub Release. No signing secrets
+# are configured, so the binaries are unsigned (package.ps1 warns and carries on).
+name: Windows build
+
+on:
+  push:
+    branches: [windows-build]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-build
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+  # Same craft-fonts commit as release.yml, so the embedded Japanese fonts match the official build.
+  CRAFT_FONTS_REF: abb83316d96aa59c1cf64784289e378fe9fa5695
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out craft-fonts (embedded fonts)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-build-x64
+      - name: Install WiX
+        shell: pwsh
+        run: dotnet tool install --global wix --version 5.0.2
+      - name: Build and package
+        shell: pwsh
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: ./packaging/windows/package.ps1 -Arch x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/release/*
+          if-no-files-found: error
+
+  release:
+    needs: windows
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: assets
+      - name: Publish draft release
+        run: |
+          . packaging/env.sh
+          tag="v$VERSION"
+          cd assets
+          sha256sum -- * >SHA256SUMS.txt
+          notes="Bản build Windows (x64) tự build từ mã nguồn PrintCraft $tag của đội ArtCraft (https://github.com/storytold/printcraft, MIT OR Apache-2.0). Không phải bản chính thức và chưa ký số, nên Windows SmartScreen có thể cảnh báo. Đối chiếu SHA256SUMS.txt trước khi cài."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" --clobber -- *
+          else
+            gh release create "$tag" --draft --target "$GITHUB_SHA" \
+              --title "PrintCraft $VERSION cho Windows" --notes "$notes" -- *
+          fi
