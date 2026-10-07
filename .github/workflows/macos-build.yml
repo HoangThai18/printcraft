@@ -1,0 +1,42 @@
+# macOS-only subset of release.yml for self-hosted downloads: builds the universal (Apple Silicon +
+# Intel) DMG from the checked-out commit and keeps it as a workflow artifact. No Apple certificate
+# is configured, so package.sh signs ad-hoc and skips notarization: Gatekeeper asks the user to
+# approve the app on first launch.
+name: macOS build
+
+on:
+  push:
+    branches: [windows-build]
+    paths: [.github/workflows/macos-build.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-build
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-build-universal
+      - name: Build and package
+        run: packaging/macos/package.sh --arch universal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: dist/release/*.dmg
+          if-no-files-found: error
