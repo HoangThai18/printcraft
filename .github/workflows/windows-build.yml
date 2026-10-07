@@ -64,12 +64,12 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: windows-x64
-          path: assets
+          path: release-files
       - name: Publish draft release
         run: |
           . packaging/env.sh
           tag="v$VERSION"
-          cd assets
+          cd release-files
           sha256sum -- * >SHA256SUMS.txt
           notes="Bản build Windows (x64) tự build từ mã nguồn PrintCraft $tag của đội ArtCraft (https://github.com/storytold/printcraft, MIT OR Apache-2.0). Không phải bản chính thức và chưa ký số, nên Windows SmartScreen có thể cảnh báo. Đối chiếu SHA256SUMS.txt trước khi cài."
           if gh release view "$tag" >/dev/null 2>&1; then
